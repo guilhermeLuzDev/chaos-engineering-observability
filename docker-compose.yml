@@ -1,0 +1,91 @@
+services:
+  # 1. Serviço dependente (Processamento de Pagamento)
+  payment-service:
+    build:
+      context: ./services/payment_service
+    container_name: payment-service
+    ports:
+      - "8001:8001"
+    networks:
+      - scnt-net
+
+  # 2. Injetor de Caos de Rede (Toxiproxy)
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    container_name: toxiproxy
+    command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/etc/toxiproxy.json:ro
+    ports:
+      - "8474:8474" # API de controle de caos
+      - "8475:8475" # Porta com proxy para o payment-service
+    depends_on:
+      - payment-service
+    networks:
+      - scnt-net
+
+  # 3. Serviço Principal com Circuit Breaker e Métricas
+  order-service:
+    build:
+      context: ./services/order_service
+    container_name: order-service
+    environment:
+      - PAYMENT_SERVICE_URL=http://toxiproxy:8475/pay
+    ports:
+      - "8000:8000"
+    depends_on:
+      - toxiproxy
+    networks:
+      - scnt-net
+
+  # 4. Gerador Automático de Carga de Pedidos
+  load-generator:
+    build:
+      context: ./services/load_generator
+    container_name: load-generator
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8000/orders
+      - RATE_DELAY=0.25 # ~4 a 5 requisições por segundo
+    depends_on:
+      - order-service
+    networks:
+      - scnt-net
+
+  # 5. Coletor de Métricas (Prometheus)
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - order-service
+    networks:
+      - scnt-net
+
+  # 6. Painel Visual (Grafana - Pré-configurado sem necessidade de login)
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/chaos_dashboard.json
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - scnt-net
+
+networks:
+  scnt-net:
+    driver: bridge

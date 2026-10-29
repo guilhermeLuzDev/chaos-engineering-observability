@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv/
+env/
+venv/
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+.antigravity-ide/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

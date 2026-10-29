@@ -1,0 +1,8 @@
+[
+  {
+    "name": "payment_proxy",
+    "listen": "0.0.0.0:8475",
+    "upstream": "payment-service:8001",
+    "enabled": true
+  }
+]
